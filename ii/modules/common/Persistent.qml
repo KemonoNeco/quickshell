@@ -73,6 +73,8 @@ Singleton {
             property JsonObject booru: JsonObject {
                 property bool allowNsfw: false
                 property string provider: "yandere"
+                property list<string> blacklist: []
+                property bool blacklistEnabled: true
             }
 
             property JsonObject idle: JsonObject {

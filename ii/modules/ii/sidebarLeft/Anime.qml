@@ -83,13 +83,71 @@ Item {
                 Persistent.states.booru.allowNsfw = true;
             }
         },
+        {
+            name: "blacklist",
+            description: Translation.tr("Manage blacklist: add <tag>, remove <tag>, list, clear, toggle"),
+            execute: (args) => {
+                if (args.length === 0) {
+                    Booru.addSystemMessage(Translation.tr("Blacklist commands:\n- add <tag>: Add a tag to blacklist\n- remove <tag>: Remove a tag from blacklist\n- list: Show current blacklist\n- clear: Clear all blacklisted tags\n- toggle: Toggle blacklist on/off"));
+                    return;
+                }
+                
+                const subcommand = args[0].toLowerCase();
+                let blacklist = Persistent.states.booru.blacklist || [];
+                // Create a copy to ensure JsonAdapter detects changes
+                blacklist = [...blacklist];
+                
+                if (subcommand === "add" && args.length > 1) {
+                    const tag = args.slice(1).join(" ").trim();
+                    if (tag.length === 0) {
+                        Booru.addSystemMessage(Translation.tr("Please provide a tag to add"));
+                        return;
+                    }
+                    if (blacklist.indexOf(tag) === -1) {
+                        blacklist.push(tag);
+                        Persistent.states.booru.blacklist = blacklist;
+                        Booru.addSystemMessage(Translation.tr("Added '%1' to blacklist").arg(tag));
+                    } else {
+                        Booru.addSystemMessage(Translation.tr("'%1' is already in blacklist").arg(tag));
+                    }
+                } else if (subcommand === "remove" && args.length > 1) {
+                    const tag = args.slice(1).join(" ").trim();
+                    const index = blacklist.indexOf(tag);
+                    if (index !== -1) {
+                        blacklist.splice(index, 1);
+                        Persistent.states.booru.blacklist = blacklist;
+                        Booru.addSystemMessage(Translation.tr("Removed '%1' from blacklist").arg(tag));
+                    } else {
+                        Booru.addSystemMessage(Translation.tr("'%1' is not in blacklist").arg(tag));
+                    }
+                } else if (subcommand === "list") {
+                    const isEnabled = Persistent.states.booru.blacklistEnabled !== false;
+                    const status = isEnabled ? Translation.tr("enabled") : Translation.tr("disabled");
+                    if (blacklist.length === 0) {
+                        Booru.addSystemMessage(Translation.tr("Blacklist is empty (status: %1)").arg(status));
+                    } else {
+                        Booru.addSystemMessage(Translation.tr("Blacklist status: %1\nBlacklisted tags:\n- ").arg(status) + blacklist.join("\n- "));
+                    }
+                } else if (subcommand === "clear") {
+                    Persistent.states.booru.blacklist = [];
+                    Booru.addSystemMessage(Translation.tr("Blacklist cleared"));
+                } else if (subcommand === "toggle") {
+                    const currentState = Persistent.states.booru.blacklistEnabled !== false;
+                    Persistent.states.booru.blacklistEnabled = !currentState;
+                    Booru.addSystemMessage(Translation.tr("Blacklist %1").arg(!currentState ? Translation.tr("enabled") : Translation.tr("disabled")));
+                } else {
+                    Booru.addSystemMessage(Translation.tr("Invalid blacklist command. Use: add <tag>, remove <tag>, list, clear, or toggle"));
+                }
+            }
+        },
     ]
 
     function handleInput(inputText) {
         if (inputText.startsWith(root.commandPrefix)) {
             // Handle special commands
-            const command = inputText.split(" ")[0].substring(1);
-            const args = inputText.split(" ").slice(1);
+            const parts = inputText.substring(1).split(" ");
+            const command = parts[0];
+            const args = parts.slice(1);
             const commandObj = root.allCommands.find(cmd => cmd.name === `${command}`);
             if (commandObj) {
                 commandObj.execute(args);
@@ -506,6 +564,7 @@ Item {
                     visible: width > 0
                     implicitWidth: switchesRow.implicitWidth
                     Layout.fillHeight: true
+                    Layout.rightMargin: -10
 
                     hoverEnabled: true
                     PointingHandInteraction {}
@@ -535,6 +594,43 @@ Item {
                             onCheckedChanged: {
                                 if (!nsfwSwitch.enabled) return;
                                 Persistent.states.booru.allowNsfw = checked;
+                            }
+                        }
+                    }
+
+                }
+
+                MouseArea { // Blacklist toggle
+                    visible: width > 0
+                    implicitWidth: blacklistSwitchesRow.implicitWidth
+                    Layout.fillHeight: true
+
+                    hoverEnabled: true
+                    PointingHandInteraction {}
+                    onPressed: {
+                        blacklistSwitch.checked = !blacklistSwitch.checked
+                    }
+
+                    RowLayout {
+                        id: blacklistSwitchesRow
+                        spacing: 5
+                        anchors.centerIn: parent
+
+                        StyledText {
+                            Layout.fillHeight: true
+                            Layout.leftMargin: 10
+                            Layout.alignment: Qt.AlignVCenter
+                            font.pixelSize: Appearance.font.pixelSize.smaller
+                            color: Appearance.colors.colOnLayer1
+                            text: Translation.tr("Blacklist")
+                        }
+                        StyledSwitch {
+                            id: blacklistSwitch
+                            scale: 0.6
+                            Layout.alignment: Qt.AlignVCenter
+                            checked: Persistent.states.booru.blacklistEnabled !== false
+                            onCheckedChanged: {
+                                Persistent.states.booru.blacklistEnabled = checked;
                             }
                         }
                     }

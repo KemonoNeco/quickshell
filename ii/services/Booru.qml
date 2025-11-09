@@ -271,6 +271,69 @@ Singleton {
                     }
                 });
             },
+        },
+        "e621": {
+            "name": "e621",
+            "url": "https://e621.net",
+            "api": "https://e621.net/posts.json",
+            "description": Translation.tr("Furry art | Great quantity, lots of NSFW, quality varies"),
+            "mapFunc": (response) => {
+                // e621 API returns an object with a posts array, or sometimes an array directly
+                let posts = []
+                if (Array.isArray(response)) {
+                    posts = response
+                } else if (response && response.posts && Array.isArray(response.posts)) {
+                    posts = response.posts
+                }
+                
+                return posts.map(item => {
+                    if (!item || !item.id) return null
+                    
+                    // e621 tags are organized in categories
+                    const allTags = []
+                    if (item.tags && typeof item.tags === 'object') {
+                        Object.keys(item.tags).forEach(category => {
+                            if (item.tags[category] && Array.isArray(item.tags[category])) {
+                                allTags.push(...item.tags[category])
+                            }
+                        })
+                    }
+                    
+                    const file = item.file || {}
+                    const preview = item.preview || {}
+                    const sample = item.sample || {}
+                    const width = file.width || 0
+                    const height = file.height || 0
+                    
+                    // Skip items without file URL
+                    if (!file.url) return null
+                    
+                    return {
+                        "id": item.id,
+                        "width": width,
+                        "height": height,
+                        "aspect_ratio": width && height ? width / height : 1,
+                        "tags": allTags.join(" "),
+                        "rating": item.rating || "s",
+                        "is_nsfw": (item.rating != 's'),
+                        "md5": file.md5 || "",
+                        "preview_url": preview.url || sample.url || file.url || "",
+                        "sample_url": sample.url || file.url || "",
+                        "file_url": file.url || "",
+                        "file_ext": file.ext || "",
+                        "source": getWorkingImageSource(item.sources?.[0] || "") ?? (file.url || ""),
+                    }
+                }).filter(item => item !== null)
+            },
+            "tagSearchTemplate": "https://e621.net/tags.json?limit=10&search[name_matches]={{query}}*",
+            "tagMapFunc": (response) => {
+                return response.map(item => {
+                    return {
+                        "name": item.name,
+                        "count": item.post_count
+                    }
+                })
+            }
         }
     }
     property var currentProvider: Persistent.states.booru.provider
@@ -280,6 +343,51 @@ Singleton {
             return `https://www.pixiv.net/en/artworks/${url.substring(url.lastIndexOf('/') + 1).replace(/_p\d+\.(png|jpg|jpeg|gif)$/, '')}`;
         }
         return url;
+    }
+
+    function filterBlacklisted(images) {
+        // Check if blacklist is enabled
+        if (Persistent.states.booru.blacklistEnabled === false) {
+            return images
+        }
+        
+        const blacklist = Persistent.states.booru.blacklist || []
+        if (blacklist.length === 0) {
+            return images
+        }
+        
+        // Convert blacklist to lowercase for case-insensitive matching
+        const blacklistLower = blacklist.map(tag => tag.toLowerCase().trim()).filter(tag => tag.length > 0)
+        if (blacklistLower.length === 0) {
+            return images
+        }
+        
+        return images.filter(image => {
+            if (!image || !image.tags) {
+                return true
+            }
+            
+            // Tags can be a string or array depending on provider
+            let imageTags = []
+            if (typeof image.tags === 'string') {
+                imageTags = image.tags.split(/\s+/).map(tag => tag.toLowerCase().trim()).filter(tag => tag.length > 0)
+            } else if (Array.isArray(image.tags)) {
+                imageTags = image.tags.map(tag => {
+                    const tagStr = typeof tag === 'string' ? tag : String(tag)
+                    return tagStr.toLowerCase().trim()
+                }).filter(tag => tag.length > 0)
+            }
+            
+            // Check if any blacklisted tag matches any image tag (exact match)
+            for (let i = 0; i < blacklistLower.length; i++) {
+                const blacklistedTag = blacklistLower[i]
+                if (imageTags.some(tag => tag === blacklistedTag)) {
+                    return false
+                }
+            }
+            
+            return true
+        })
     }
     
     function setProvider(provider) {
@@ -385,6 +493,8 @@ Singleton {
                         response = provider.mapFunc(response)
                     }
                     // console.log("[Booru] Mapped response: " + JSON.stringify(response))
+                    // Apply blacklist filter
+                    response = root.filterBlacklisted(response)
                     newResponse.images = response
                     newResponse.message = response.length > 0 ? "" : root.failMessage
                     
@@ -406,8 +516,8 @@ Singleton {
         }
 
         try {
-            // Required for danbooru
-            if (currentProvider == "danbooru") {
+            // Required for danbooru and e621
+            if (currentProvider == "danbooru" || currentProvider == "e621") {
                 xhr.setRequestHeader("User-Agent", defaultUserAgent)
             }
             else if (currentProvider == "zerochan") {
@@ -458,8 +568,8 @@ Singleton {
         }
 
         try {
-            // Required for danbooru
-            if (currentProvider == "danbooru") {
+            // Required for danbooru and e621
+            if (currentProvider == "danbooru" || currentProvider == "e621") {
                 xhr.setRequestHeader("User-Agent", defaultUserAgent)
             }
             xhr.send()
